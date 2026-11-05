@@ -11,7 +11,18 @@ are not published.
 
 | # | Topic | Tools | Platform | Date |
 |---|-------|-------|----------|------|
-| - | First write-ups coming soon | - | - | - |
+| 01 | [Detecting an SSH brute-force attempt](attack-sims/writeup-01-ssh-brute-force.md) | Wazuh, Ubuntu Server, OpenSSH | Home SOC lab | 2026-11-05 |
+
+## Home SOC lab
+
+A Wazuh SIEM and an Ubuntu Server endpoint (Wazuh agent) on an isolated
+VirtualBox network. The setup logs document every step, including what broke
+and how I fixed it.
+
+| # | Log | What it covers |
+|---|-----|----------------|
+| 01 | [Wazuh SIEM deployment and troubleshooting](lab-setup/01-wazuh-setup-and-troubleshooting.md) | Wazuh deployment, full-disk incident, default credentials, first triage |
+| 02 | [Ubuntu target, Wazuh agent and time sync](lab-setup/02-ubuntu-target-and-agent.md) | Ubuntu Server install, agent enrollment, SIEM clock drift |
 
 ## Structure of each write-up
 
