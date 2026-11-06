@@ -6,7 +6,7 @@
 
 ## Summary
 
-I simulated an SSH brute-force attempt against a monitored Ubuntu server and validated that Wazuh detected it. Before running the attack, I wrote down the detection I expected based on the Wazuh documentation. The expected alert fired (rule **5712**, level 10). During the analysis I also found a **clock skew of roughly 40 to 50 seconds** between the SIEM and the endpoint, which made one alert appear **before** the event that caused it. I fixed the root cause and validated the fix with a second run.
+I simulated an SSH brute-force attempt against a monitored Ubuntu server and validated that Wazuh detected it. Before running the attack, I wrote down the detection I expected based on the Wazuh documentation. The expected alert fired (rule **5712**, level 10). During the analysis I also found a **clock skew of roughly 40 to 55 seconds** (38 s in the alert timeline, about 53 s by `date -u`) between the SIEM and the endpoint, which made one alert appear **before** the event that caused it. I fixed the root cause and validated the fix with a second run.
 
 ## Lab environment
 
@@ -97,7 +97,7 @@ The alert appeared **38 seconds before** the event that triggered it, which is i
 
 **Investigation.**
 
-1. `date -u` on both hosts: Ubuntu `20:27:29`, Wazuh `20:26:36`. The Wazuh server was behind by roughly 50 seconds (the exact value includes the few seconds between the two commands).
+1. `date -u` on both hosts: Ubuntu `20:27:29`, Wazuh `20:26:36`. The Wazuh server was behind by about 53 seconds (an approximate value, since it includes the few seconds between the two commands).
 2. `timedatectl` on the Wazuh server: `NTP service: active`, `System clock synchronized: no`.
 
 **Root cause.** The Wazuh VM was only connected to the Host-only network, so its NTP client could not reach any time server. The Ubuntu VM has a NAT adapter and was synchronized.
@@ -106,10 +106,10 @@ The alert appeared **38 seconds before** the event that triggered it, which is i
 
 **Validation (run 2).**
 
-| | Event time (`full_log`) | Alert time (`timestamp`) | Difference |
-|---|---|---|---|
-| Run 1 (before fix) | 20:16:17 UTC | 20:15:39 UTC | Alert **38 s before** the event |
-| Run 2 (after fix) | 21:52:06 UTC | 21:52:08 UTC | Alert **2 s after** the event |
+| | Date | Event time (`full_log`) | Alert time (`timestamp`) | Difference |
+|---|---|---|---|---|
+| Run 1 (before fix) | 2026-11-05 | 20:16:17 UTC | 20:15:39 UTC | Alert **38 s before** the event |
+| Run 2 (after fix) | 2026-11-05 | 21:52:06 UTC | 21:52:08 UTC | Alert **2 s after** the event |
 
 Run 2 also triggered rule 5712 with the same fields (T1110, frequency 8, source 192.168.56.1, two connections on ports 50452 and 64359), so the detection is reproducible.
 
@@ -139,7 +139,7 @@ sudo grep -rn -A8 'id="5712"' /var/ossec/ruleset/rules/
 
 - `frequency="8"` + `timeframe="120"`: 8 matches of rule 5710 within 120 seconds.
 - `<same_source_ip />`: the matches must share the source IP. This is why failures from two different SSH connections were correlated.
-- `ignore="60"`: per the Wazuh rules syntax documentation, the time in seconds to ignore the rule after it triggers, to avoid alert floods. This explains the single 5712 alert during run 1.
+- `ignore="60"`: per the Wazuh rules syntax documentation, the time in seconds to ignore the rule after it triggers, to avoid alert floods. This is the most likely explanation for the single 5712 alert during run 1. I did not record the exact timing of every attempt in run 1, so I could not fully confirm it against the timeline; a timed re-run is listed in the next steps.
 
 The rule on 4.14.9 matches the one described in the 4.2 documentation.
 
@@ -175,7 +175,30 @@ agent.name:ubuntu-lab and data.srcip:192.168.56.1 and rule.groups:authentication
 
 **Verdict (with lab context).** Brute force: true positive, simulated and authorized. Login as `sofia`: benign, legitimate administration from my own host.
 
+## Response and recommendations
+
+What I would recommend if this alert came from an unknown source in a real environment:
+
+**Triage and containment**
+
+- Confirm whether the source IP belongs to an authorized workstation before taking action.
+- If it does not, block the source IP at the firewall. Wazuh Active Response (for example, `firewall-drop`) can do this automatically for rule 5712.
+- Check every account that logged in successfully from that IP and review what happened during those sessions.
+
+**Hardening**
+
+- Disable password authentication for SSH (`PasswordAuthentication no`) and use key-based authentication only.
+- Disable direct root login (`PermitRootLogin no`).
+- Limit attempts per connection (`MaxAuthTries`) and add rate limiting, for example with fail2ban.
+- Allow SSH only from the management network instead of every host.
+
+**Detection improvements**
+
+- Create a correlation rule that raises the level of a successful login (5715) when the same source IP triggered 5712 shortly before. In this lab, that link had to be made manually.
+- Monitor NTP synchronization on the SIEM itself, since a skewed clock breaks the incident timeline.
+
 ## Next steps
 
 - Test failed logins for an **existing** user, which should trigger a different rule chain.
+- Re-run the attack with timestamps for each attempt to confirm the effect of `ignore="60"`.
 - Investigate how SSH key-only authentication changes this scenario.
