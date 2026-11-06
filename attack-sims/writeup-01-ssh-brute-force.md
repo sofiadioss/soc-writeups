@@ -66,6 +66,9 @@ Threat Hunting, filtered by `agent.name:ubuntu-lab`, last 15 minutes: **23 alert
 | 2502 | 10 | syslog: User missed the password more than one time | Repeated password failures |
 | **5712** | **10** | **sshd: brute force trying to get access to the system. Non existent user.** | **Correlation: the brute-force pattern** |
 
+![Wazuh Threat Hunting: alerts from rules 5710, 5503, 2502 and 5712](../screenshots/01-alerts-overview.png)
+*Alerts from run 2 (2026-11-05, 18:52 local time, UTC-3): the 5712 correlation at 18:52:08, surrounded by the individual 5710, 5503 and 2502 events.*
+
 **Hypothesis confirmed.** Key fields of the 5712 alert:
 
 | Field | Value |
@@ -77,6 +80,10 @@ Threat Hunting, filtered by `agent.name:ubuntu-lab`, last 15 minutes: **23 alert
 | `rule.mitre.tactic` | Credential Access |
 | `location` | journald |
 | `rule.groups` | syslog, sshd, authentication_failures |
+
+![Rule 5712 alert details, part 1](../screenshots/02a-alert-5712-details.png)
+![Rule 5712 alert details, part 2](../screenshots/02b-alert-5712-details.png)
+*The 5712 alert from run 2 (after the clock fix).*
 
 The `previous_output` field lists the 7 earlier log lines that, together with the current one, reached the frequency of 8. They come from **two different SSH connections** (source ports 49648 and 49649), which shows the correlation is based on the **source IP**, not on a single session.
 
@@ -103,6 +110,8 @@ The alert appeared **38 seconds before** the event that triggered it, which is i
 **Root cause.** The Wazuh VM was only connected to the Host-only network, so its NTP client could not reach any time server. The Ubuntu VM has a NAT adapter and was synchronized.
 
 **Fix.** Added a second network adapter (NAT) to the Wazuh VM, keeping Adapter 1 on Host-only so the server kept its IP (192.168.56.101). NAT allows outbound connections only, so the dashboard is still not reachable from outside the host. After boot, `timedatectl` showed `System clock synchronized: yes`.
+
+![timedatectl on the Wazuh server after the fix](../screenshots/04-timedatectl-synced.png)
 
 **Validation (run 2).**
 
@@ -137,9 +146,11 @@ sudo grep -rn -A8 'id="5712"' /var/ossec/ruleset/rules/
 
 (file: `/var/ossec/ruleset/rules/0095-sshd_rules.xml`, Wazuh 4.14.9)
 
+![Rule 5712 XML on the Wazuh server](../screenshots/03-rule-5712-xml.png)
+
 - `frequency="8"` + `timeframe="120"`: 8 matches of rule 5710 within 120 seconds.
 - `<same_source_ip />`: the matches must share the source IP. This is why failures from two different SSH connections were correlated.
-- `ignore="60"`: per the Wazuh rules syntax documentation, the time in seconds to ignore the rule after it triggers, to avoid alert floods. This is the most likely explanation for the single 5712 alert during run 1. I did not record the exact timing of every attempt in run 1, so I could not fully confirm it against the timeline; a timed re-run is listed in the next steps.
+- `ignore="60"`: per the Wazuh rules syntax documentation, the time in seconds to ignore the rule after it triggers, to avoid alert floods. This is the most likely explanation for the single 5712 alert during run 1. Run 2 is consistent with it: after 5712 fired at 18:52:08 (local time), rule 5710 kept matching for about 40 more seconds without a second 5712 alert (see the first screenshot). I did not record the exact timing of every attempt in run 1, so I could not fully confirm it against the timeline; a timed re-run is listed in the next steps.
 
 The rule on 4.14.9 matches the one described in the 4.2 documentation.
 
